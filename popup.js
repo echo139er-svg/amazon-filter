@@ -7,6 +7,8 @@ const DEFAULTS = {
   minFiveStarPct: 0,
   mode: 'hide',
   filterFrequentlyReturned: true,
+  filterSlowDelivery: false,
+  maxDeliveryDays: 10,
   autoLoadMore: true,
   minVisible: 16,
 };
@@ -25,6 +27,8 @@ const els = {
   minStars: $('minStars'),
   minFiveStarPct: $('minFiveStarPct'),
   filterFrequentlyReturned: $('filterFrequentlyReturned'),
+  filterSlowDelivery: $('filterSlowDelivery'),
+  maxDeliveryDays: $('maxDeliveryDays'),
   autoLoadMore: $('autoLoadMore'),
   minVisible: $('minVisible'),
 };
@@ -47,6 +51,8 @@ chrome.storage.sync.get(DEFAULTS, (stored) => {
   els.minStars.value = s.minStars;
   els.minFiveStarPct.value = s.minFiveStarPct;
   els.filterFrequentlyReturned.checked = s.filterFrequentlyReturned;
+  els.filterSlowDelivery.checked = s.filterSlowDelivery;
+  els.maxDeliveryDays.value = s.maxDeliveryDays;
   els.autoLoadMore.checked = s.autoLoadMore;
   els.minVisible.value = s.minVisible;
 
@@ -84,6 +90,8 @@ function collectSettings() {
     minStars: Math.min(5, Math.max(1, parseFloat(els.minStars.value) || 4.0)),
     minFiveStarPct: Math.min(100, Math.max(0, parseInt(els.minFiveStarPct.value, 10) || 0)),
     filterFrequentlyReturned: els.filterFrequentlyReturned.checked,
+    filterSlowDelivery: els.filterSlowDelivery.checked,
+    maxDeliveryDays: Math.max(1, parseInt(els.maxDeliveryDays.value, 10) || DEFAULTS.maxDeliveryDays),
     autoLoadMore: els.autoLoadMore.checked,
     minVisible: Math.max(1, parseInt(els.minVisible.value, 10) || 16),
   };
@@ -109,6 +117,7 @@ function saveDebounced() {
 // Immediate save for toggles and radios
 els.enabled.addEventListener('change', saveNow);
 els.filterFrequentlyReturned.addEventListener('change', saveNow);
+els.filterSlowDelivery.addEventListener('change', saveNow);
 els.autoLoadMore.addEventListener('change', saveNow);
 els.modeHide.addEventListener('change', saveNow);
 els.modeDim.addEventListener('change', saveNow);
@@ -117,12 +126,14 @@ els.modeDim.addEventListener('change', saveNow);
 els.minReviews.addEventListener('input', saveDebounced);
 els.minStars.addEventListener('input', saveDebounced);
 els.minFiveStarPct.addEventListener('input', saveDebounced);
+els.maxDeliveryDays.addEventListener('input', saveDebounced);
 els.minVisible.addEventListener('input', saveDebounced);
 
 // Also save on blur for number inputs (in case user tabs away without triggering input)
 els.minReviews.addEventListener('change', saveNow);
 els.minStars.addEventListener('change', saveNow);
 els.minFiveStarPct.addEventListener('change', saveNow);
+els.maxDeliveryDays.addEventListener('change', saveNow);
 els.minVisible.addEventListener('change', saveNow);
 
 // Refresh stats periodically while popup is open

@@ -328,6 +328,29 @@
 
     <hr />
 
+    <!-- Slow / overseas shipping -->
+    <div class="section">
+      <div class="section-title">Shipping</div>
+
+      <div class="field">
+        <label>Filter slow / overseas delivery</label>
+        <label class="mini-switch">
+          <input type="checkbox" id="filterSlowDelivery" />
+          <span class="mini-slider"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="maxDeliveryDays">
+          Max delivery days
+          <div class="note">Flags listings promising delivery beyond this many days</div>
+        </label>
+        <input type="number" id="maxDeliveryDays" min="1" max="90" step="1" />
+      </div>
+    </div>
+
+    <hr />
+
     <!-- Auto-load -->
     <div class="section">
       <div class="section-title">Auto-Load More Pages</div>

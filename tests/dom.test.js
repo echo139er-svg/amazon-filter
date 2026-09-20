@@ -133,3 +133,54 @@ describe('extractProductData', () => {
     expect(data.frequentlyReturned).toBe(false);
   });
 });
+
+// ─── extractProductData — deliveryDays ─────────────────────────────────────────
+
+describe('extractProductData — deliveryDays', () => {
+  test('returns null when no delivery block is present', () => {
+    const card = makeCard('<div>No delivery info</div>');
+    const data = extractProductData(card);
+    expect(data.deliveryDays).toBeNull();
+  });
+
+  test('returns null when the delivery message mentions Prime', () => {
+    const card = makeCard(`
+      <div data-cy="delivery-block">
+        <div class="udm-primary-delivery-message">Join Prime to get FREE delivery Tomorrow</div>
+      </div>
+    `);
+    const data = extractProductData(card);
+    expect(data.deliveryDays).toBeNull();
+  });
+
+  test('parses a numeric delivery estimate from a non-Prime message', () => {
+    const card = makeCard(`
+      <div data-cy="delivery-block">
+        <div class="udm-primary-delivery-message">$6.99 delivery Dec 25</div>
+      </div>
+    `);
+    const data = extractProductData(card);
+    expect(typeof data.deliveryDays).toBe('number');
+  });
+
+  test('falls back to the whole delivery-block text when the primary-message element is absent', () => {
+    const card = makeCard(`
+      <div data-cy="delivery-block">$4.99 delivery Dec 25</div>
+    `);
+    const data = extractProductData(card);
+    expect(typeof data.deliveryDays).toBe('number');
+  });
+
+  test('ignores dates embedded in inline script tags', () => {
+    const card = makeCard(`
+      <div data-cy="delivery-block">
+        <div class="udm-primary-delivery-message">
+          <script>var fallbackDate = "Jan 1";</script>
+          Delivery cost varies
+        </div>
+      </div>
+    `);
+    const data = extractProductData(card);
+    expect(data.deliveryDays).toBeNull();
+  });
+});

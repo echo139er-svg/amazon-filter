@@ -14,6 +14,8 @@ const DEFAULTS = {
   minFiveStarPct: 0,
   mode: 'hide',
   filterFrequentlyReturned: true,
+  filterSlowDelivery: false,
+  maxDeliveryDays: 10,
   autoLoadMore: true,
   minVisible: 16,
 };
@@ -95,6 +97,53 @@ function parseFiveStarPct(html) {
   return null;
 }
 
+const MONTH_INDEX = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/**
+ * Parse the earliest promised date out of a delivery-message string like
+ * "Join Prime to get FREE delivery Tomorrow, Sep 21" or
+ * "$6.99 delivery Sep 30 - Oct 9", and return whole days from now.
+ *
+ * Returns null when the message can't be parsed OR when it mentions Prime —
+ * Prime-badged delivery is trusted as fast/domestic, so the slow-delivery
+ * filter doesn't apply to it.
+ *
+ * @param {string} text
+ * @param {Date} [referenceDate] - "today", injectable for testing
+ */
+function parseDeliveryDays(text, referenceDate = new Date()) {
+  if (!text) return null;
+  if (/\bprime\b/i.test(text)) return null;
+
+  const match = text.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2})\b/);
+  if (!match) return null;
+
+  const month = MONTH_INDEX[match[1].slice(0, 3).toLowerCase()];
+  if (month === undefined) return null;
+
+  const day = parseInt(match[2], 10);
+  if (!day || day < 1 || day > 31) return null;
+
+  const today = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate()
+  );
+  let candidate = new Date(today.getFullYear(), month, day);
+
+  // A parsed date that's far in the past likely wrapped into next year
+  // (e.g. "today" is late December and the estimate reads "Jan 3").
+  if (candidate.getTime() < today.getTime() - 60 * 24 * 60 * 60 * 1000) {
+    candidate = new Date(today.getFullYear() + 1, month, day);
+  }
+
+  const diffDays = Math.round((candidate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  return Math.max(0, diffDays);
+}
+
 /**
  * Extract product data from a card element.
  * Returns { asin, stars, reviewCount, frequentlyReturned }
@@ -125,7 +174,26 @@ function extractProductData(card) {
     !!card.querySelector('[class*="frequently-returned"]') ||
     /frequently returned/i.test(card.textContent);
 
-  return { asin, stars, reviewCount, frequentlyReturned };
+  // Delivery estimate — used to flag likely slow/overseas-shipped listings
+  const deliveryBlock = card.querySelector('[data-cy="delivery-block"]');
+  const deliveryEl = deliveryBlock
+    ? deliveryBlock.querySelector('.udm-primary-delivery-message') || deliveryBlock
+    : null;
+  const deliveryDays = parseDeliveryDays(getCleanText(deliveryEl));
+
+  return { asin, stars, reviewCount, frequentlyReturned, deliveryDays };
+}
+
+/**
+ * Text content of an element with any <script>/<style> children stripped —
+ * Amazon inlines both directly inside delivery-message elements, and they'd
+ * otherwise pollute textContent with unrelated dates/code.
+ */
+function getCleanText(el) {
+  if (!el) return '';
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('script, style').forEach((n) => n.remove());
+  return clone.textContent.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -136,7 +204,7 @@ function extractProductData(card) {
  * @param {object} cfg - settings object
  */
 function passesFilter(data, cfg) {
-  const { stars, reviewCount, frequentlyReturned, fiveStarPct } = data;
+  const { stars, reviewCount, frequentlyReturned, fiveStarPct, deliveryDays } = data;
 
   // Review count threshold
   if (reviewCount < cfg.minReviews) return false;
@@ -151,6 +219,11 @@ function passesFilter(data, cfg) {
 
   // Frequently returned
   if (cfg.filterFrequentlyReturned && frequentlyReturned) return false;
+
+  // Slow/likely-overseas delivery — skip if disabled or unparseable/Prime (null)
+  if (cfg.filterSlowDelivery && deliveryDays !== null && deliveryDays > cfg.maxDeliveryDays) {
+    return false;
+  }
 
   return true;
 }
@@ -216,6 +289,9 @@ function upsertBadge(card, data) {
   parts.push(`${data.reviewCount.toLocaleString()} reviews`);
   const fiveStarPct = data.fiveStarPct !== null ? data.fiveStarPct : null;
   if (fiveStarPct !== null) parts.push(`${fiveStarPct}% 5★`);
+  if (data.deliveryDays !== null && data.deliveryDays !== undefined) {
+    parts.push(`${data.deliveryDays}d delivery`);
+  }
 
   badge.textContent = `⚠ ${parts.join(' | ')}`;
 
@@ -478,6 +554,7 @@ if (typeof module !== 'undefined' && module.exports) {
     parseReviewCount,
     passesFilter,
     parseFiveStarPct,
+    parseDeliveryDays,
     extractProductData,
     applyFilter,
     clearFilter,

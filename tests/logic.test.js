@@ -5,6 +5,7 @@ const {
   parseReviewCount,
   passesFilter,
   parseFiveStarPct,
+  parseDeliveryDays,
 } = require('../content.js');
 
 // ─── parseStarRating ──────────────────────────────────────────────────────────
@@ -149,6 +150,49 @@ describe('parseFiveStarPct', () => {
   });
 });
 
+// ─── parseDeliveryDays ────────────────────────────────────────────────────────
+
+describe('parseDeliveryDays', () => {
+  const ref = new Date(2026, 0, 10); // Jan 10, 2026 — fixed "today" for determinism
+
+  test('returns null for Prime-badged text regardless of the date present', () => {
+    expect(parseDeliveryDays('Join Prime to get FREE delivery Tomorrow, Jan 11', ref)).toBeNull();
+  });
+
+  test('parses a single near-term date', () => {
+    expect(parseDeliveryDays('FREE delivery Jan 12', ref)).toBe(2);
+  });
+
+  test('parses the start of a "Month Day - Month Day" range', () => {
+    expect(parseDeliveryDays('$6.99 delivery Jan 20 - Jan 29', ref)).toBe(10);
+  });
+
+  test('parses the start of a "Month Day - Day" range (second month omitted)', () => {
+    expect(parseDeliveryDays('$3.99 delivery Jan 25 - 30', ref)).toBe(15);
+  });
+
+  test('rolls over into next year across a December/January boundary', () => {
+    const decRef = new Date(2025, 11, 28); // Dec 28, 2025
+    expect(parseDeliveryDays('$4.99 delivery Jan 3 - 5', decRef)).toBe(6);
+  });
+
+  test('clamps to 0 for a date that is today', () => {
+    expect(parseDeliveryDays('FREE delivery Jan 10', ref)).toBe(0);
+  });
+
+  test('returns null when no date is present', () => {
+    expect(parseDeliveryDays('Delivery cost varies', ref)).toBeNull();
+  });
+
+  test('returns null for empty string', () => {
+    expect(parseDeliveryDays('')).toBeNull();
+  });
+
+  test('returns null for null input', () => {
+    expect(parseDeliveryDays(null)).toBeNull();
+  });
+});
+
 // ─── passesFilter ─────────────────────────────────────────────────────────────
 
 describe('passesFilter', () => {
@@ -249,5 +293,40 @@ describe('passesFilter', () => {
     };
     const data = { stars: 1.0, reviewCount: 0, frequentlyReturned: true, fiveStarPct: 0 };
     expect(passesFilter(data, cfg)).toBe(true);
+  });
+});
+
+// ─── passesFilter — slow/overseas delivery ────────────────────────────────────
+
+describe('passesFilter — slow delivery', () => {
+  const cfg = {
+    minReviews: 0,
+    minStars: 1.0,
+    minFiveStarPct: 0,
+    filterFrequentlyReturned: false,
+    filterSlowDelivery: true,
+    maxDeliveryDays: 10,
+  };
+  const base = { stars: 4.5, reviewCount: 2000, frequentlyReturned: false, fiveStarPct: null };
+
+  test('filters a listing whose delivery estimate exceeds the threshold', () => {
+    expect(passesFilter({ ...base, deliveryDays: 15 }, cfg)).toBe(false);
+  });
+
+  test('passes a listing within the threshold', () => {
+    expect(passesFilter({ ...base, deliveryDays: 5 }, cfg)).toBe(true);
+  });
+
+  test('passes a listing exactly at the threshold (boundary)', () => {
+    expect(passesFilter({ ...base, deliveryDays: 10 }, cfg)).toBe(true);
+  });
+
+  test('skips the check when deliveryDays is null (unknown or Prime)', () => {
+    expect(passesFilter({ ...base, deliveryDays: null }, cfg)).toBe(true);
+  });
+
+  test('skips the check entirely when filterSlowDelivery is off', () => {
+    const offCfg = { ...cfg, filterSlowDelivery: false };
+    expect(passesFilter({ ...base, deliveryDays: 999 }, offCfg)).toBe(true);
   });
 });
