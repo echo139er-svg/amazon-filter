@@ -28,6 +28,21 @@ let mutationObserver = null;
 let autoLoadPagesLoaded = 0;
 const MAX_AUTO_LOAD_PAGES = 3;
 
+// Card selector, and the container we scope card lookups to so unrelated
+// carousels (e.g. "related products" strips) outside the results list
+// don't get swept up in filtering/auto-load.
+const CARD_SELECTOR =
+  '[data-component-type="s-search-result"], [data-asin][class*="s-result-item"]';
+
+function getResultsContainer(root = document) {
+  return (
+    root.querySelector('.s-search-results') ||
+    root.querySelector('.s-main-slot') ||
+    root.body ||
+    root
+  );
+}
+
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -191,7 +206,7 @@ function upsertBadge(card, data) {
     font-family: Arial, sans-serif;
     padding: 3px 6px;
     border-radius: 3px;
-    z-index: 999;
+    z-index: 2147483647;
     pointer-events: none;
     white-space: nowrap;
   `;
@@ -237,11 +252,9 @@ function processAllCards() {
 }
 
 function getProductCards() {
-  return Array.from(
-    document.querySelectorAll(
-      '[data-component-type="s-search-result"], [data-asin][class*="s-result-item"]'
-    )
-  ).filter((card) => card.getAttribute('data-asin')); // must have ASIN
+  return Array.from(getResultsContainer().querySelectorAll(CARD_SELECTOR)).filter((card) =>
+    card.getAttribute('data-asin')
+  ); // must have ASIN
 }
 
 // ─── 5-star popover fetching ──────────────────────────────────────────────────
@@ -309,35 +322,25 @@ function setupMutationObserver() {
   if (mutationObserver) mutationObserver.disconnect();
 
   mutationObserver = new MutationObserver((mutations) => {
+    const container = getResultsContainer();
     let hasNewCards = false;
+
+    const handleCandidate = (card) => {
+      if (!card.getAttribute('data-asin') || !container.contains(card)) return;
+      processCard(card);
+      observeCard(card);
+      hasNewCards = true;
+    };
+
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-        // Check if the added node itself is a card
-        const isCard =
-          node.matches &&
-          node.matches(
-            '[data-component-type="s-search-result"], [data-asin][class*="s-result-item"]'
-          ) &&
-          node.getAttribute('data-asin');
-
-        if (isCard) {
-          processCard(node);
-          observeCard(node);
-          hasNewCards = true;
-        } else if (node.querySelector) {
-          // Check for cards nested within the added node
-          const nested = node.querySelectorAll(
-            '[data-component-type="s-search-result"], [data-asin][class*="s-result-item"]'
-          );
-          nested.forEach((card) => {
-            if (card.getAttribute('data-asin')) {
-              processCard(card);
-              observeCard(card);
-              hasNewCards = true;
-            }
-          });
+        if (node.matches && node.matches(CARD_SELECTOR)) {
+          handleCandidate(node);
+        }
+        if (node.querySelectorAll) {
+          node.querySelectorAll(CARD_SELECTOR).forEach(handleCandidate);
         }
       }
     }
@@ -389,13 +392,12 @@ async function maybeAutoLoadMore() {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
 
-    const newCards = doc.querySelectorAll(
-      '[data-component-type="s-search-result"], [data-asin][class*="s-result-item"]'
-    );
+    const newCards = getResultsContainer(doc).querySelectorAll(CARD_SELECTOR);
 
+    // Unlike getResultsContainer(), don't fall back to <body> here — appending
+    // fetched cards outside the real results list would look broken.
     const container =
-      document.querySelector('.s-search-results') ||
-      document.querySelector('.s-main-slot');
+      document.querySelector('.s-search-results') || document.querySelector('.s-main-slot');
 
     if (!container) return;
 

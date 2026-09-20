@@ -3,7 +3,7 @@
   "name": "Amazon Product Filter",
   "version": "1.0.0",
   "description": "Filter Amazon product listings by review count, star rating, 5-star %, and return rate.",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage"],
   "host_permissions": ["*://*.amazon.com/*"],
   "content_scripts": [
     {
